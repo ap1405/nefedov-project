@@ -1,0 +1,72 @@
+version: '3.8'
+services:
+  # PostgreSQL 18 Database
+  postgres:
+    image: postgres:18-alpine
+    container_name: warehouse_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: warehouse_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d warehouse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Backend API
+  backend:
+    build: ./backend
+    container_name: warehouse_backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASSWORD: admin123
+      DB_NAME: warehouse_db
+      JWT_SECRET: warehouse_secret_key_2024
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: npm run dev
+
+  # Frontend
+  frontend:
+    build: ./frontend
+    container_name: warehouse_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:5000/api
+      CHOKIDAR_USEPOLLING: "true"  # Для hot reload в Docker
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/node_modules/.cache
+    depends_on:
+      - backend
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    command: >
+      sh -c "
+      echo 'Ожидание backend...' &&
+      sleep 5 &&
+      npm start
+      "
+
+volumes:
+  postgres_data:
